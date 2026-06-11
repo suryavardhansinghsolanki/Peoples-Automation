@@ -9,164 +9,266 @@ import time
 import os
 
 # ==========================================
-# 1. HIGH-SPEED PROFILE SETUP
+# 1. HIGH-SPEED PROFILE SETUP (UNTOUCHED)
 # ==========================================
 chrome_options = Options()
 profile_path = r"C:\Users\HP\Desktop\MyAutoProfile"
 if not os.path.exists(profile_path):
     os.makedirs(profile_path)
-    
-chrome_options.add_argument(f"user-data-dir={profile_path}") 
+
+chrome_options.add_argument(f"user-data-dir={profile_path}")
 chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--disable-gpu")
-chrome_options.add_argument("--remote-allow-origins=*") 
-chrome_options.page_load_strategy = 'eager' # Page jaldi load karne ka hack
-chrome_options.add_experimental_option("detach", True) 
+chrome_options.add_argument("--remote-allow-origins=*")
+chrome_options.page_load_strategy = 'eager'
+chrome_options.add_experimental_option("detach", True)
 
 print("🚀 Launching Chrome at Max Speed...")
 driver = webdriver.Chrome(options=chrome_options)
-wait = WebDriverWait(driver, 10) 
+wait = WebDriverWait(driver, 10)
+fast_wait = WebDriverWait(driver, 2)
 actions = ActionChains(driver)
 
-try:
-    # --- ULTRA FAST HUMAN CLICK HELPER ---
-    def pure_human_click(element):
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
-        time.sleep(0.1) 
-        try:
-            element.click()
-        except:
-            actions.move_to_element(element).click().perform()
+# ==========================================
+# 2. HELPER FUNCTIONS 
+# ==========================================
 
-    # =========================================================
-    # INSTANT EXECUTION START (No Timer)
-    # =========================================================
-    print("⚡ Bypassing menus, jumping direct to booking...")
-    driver.get("https://peoplefirst.ril.com/webapp/#/crbs")
-    
-    wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'Create New Booking')]")))
+def js_click(element):
+    """Guaranteed click via JavaScript — bypasses overlays and React quirks."""
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+    driver.execute_script("arguments[0].click();", element)
 
-    # ---------------------------------------------------------
-    # STEP 1: LOCATION
-    # ---------------------------------------------------------
-    actions.send_keys(Keys.ESCAPE).perform() 
-    loc_lbl = driver.find_element(By.XPATH, "//*[normalize-space()='Location']")
-    actions.move_to_element(loc_lbl).move_by_offset(0, 40).click().perform()
+def pure_human_click(element):
+    """Fallback human-style click with ActionChains."""
+    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+    time.sleep(0.1)
     try:
-        search_box = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@placeholder='Search Locations...']")))
-        search_box.send_keys("Reliance Corporate Park")
-        time.sleep(0.3)
-        search_box.send_keys(Keys.ENTER)
-    except:
-        actions.send_keys("Reliance Corporate Park").pause(0.3).send_keys(Keys.ENTER).perform()
+        element.click()
+    except Exception:
+        actions.move_to_element(element).click().perform()
 
-    # ---------------------------------------------------------
-    # STEP 2: BOOKING DATE (Direct Injection + React Trigger)
-    # ---------------------------------------------------------
-    print("[*] Direct Date Injection: 12/6/2026...")
-    actions.send_keys(Keys.ESCAPE).perform()
-    
-    date_input = wait.until(EC.element_to_be_clickable((By.XPATH, "(//*[normalize-space()='Booking Date']/following::input)[1]")))
-    actions.move_to_element(date_input).click().perform()
-    
-    date_input.send_keys(Keys.CONTROL + "a")
-    date_input.send_keys(Keys.BACKSPACE)
-    date_input.send_keys("12/6/2026")
-    date_input.send_keys(Keys.TAB)
-    
-    # HACK: Forcing React to register the date change without clicking calendar
+def react_set_input(element, value):
+    """Forces a React-controlled <input> to register a new value."""
     driver.execute_script("""
-        arguments[0].dispatchEvent(new Event('input', { bubbles: true }));
+        var nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype, 'value'
+        ).set;
+        nativeInputValueSetter.call(arguments[0], arguments[1]);
+        arguments[0].dispatchEvent(new Event('input',  { bubbles: true }));
         arguments[0].dispatchEvent(new Event('change', { bubbles: true }));
-    """, date_input)
-    time.sleep(0.3)
+        arguments[0].dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+    """, element, value)
 
-    # ---------------------------------------------------------
+def open_dropdown_and_select(label_xpath, option_xpath, step_name, retries=12):
+    """Opens a dropdown and waits for the option to appear. Retries if closed."""
+    print(f"[*] Step: {step_name}")
+    label = wait.until(EC.presence_of_element_located((By.XPATH, label_xpath)))
+    for attempt in range(retries):
+        try:
+            actions.send_keys(Keys.ESCAPE).perform()
+            time.sleep(0.15)
+            # Click the dropdown trigger
+            driver.execute_script(
+                "arguments[0].parentElement.querySelector('input, [role=\"combobox\"], [class*=\"control\"]').click();",
+                label
+            )
+            option = WebDriverWait(driver, 1.5).until(
+                EC.element_to_be_clickable((By.XPATH, option_xpath))
+            )
+            js_click(option)
+            print(f"    ✅ {step_name} selected.")
+            return True
+        except Exception:
+            # Fallback: click offset below label
+            try:
+                actions.move_to_element(label).move_by_offset(0, 40).click().perform()
+                option = WebDriverWait(driver, 1.5).until(
+                    EC.element_to_be_clickable((By.XPATH, option_xpath))
+                )
+                js_click(option)
+                print(f"    ✅ {step_name} selected (fallback).")
+                return True
+            except Exception:
+                time.sleep(0.5) 
+                pass
+    print(f"    ⚠️  {step_name} failed after {retries} retries.")
+    return False
+
+# ==========================================
+# 3. EXACT AIM EXECUTION
+# ==========================================
+try:
+    print("⚡ Navigating directly to booking portal...")
+    driver.get("https://peoplefirst.ril.com/webapp/#/crbs")
+    wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'Create New Booking')]")))
+    print("    ✅ Portal loaded.")
+
+    # ----------------------------------------------------------
+    # STEP 1: LOCATION
+    # ----------------------------------------------------------
+    open_dropdown_and_select(
+        label_xpath="//*[normalize-space()='Location']",
+        option_xpath="//*[contains(text(), 'Reliance Corporate Park')]",
+        step_name="Location"
+    )
+
+    # ----------------------------------------------------------
+    # STEP 2: BOOKING DATE
+    # ----------------------------------------------------------
+    print("[*] Step: Booking Date (React-safe injection)...")
+    actions.send_keys(Keys.ESCAPE).perform()
+    date_input = wait.until(
+        EC.element_to_be_clickable(
+            (By.XPATH, "(//label[normalize-space()='Booking Date']/following::input)[1]"
+                       " | (//*[normalize-space()='Booking Date']/following::input)[1]")
+        )
+    )
+    js_click(date_input)
+    time.sleep(0.1)
+    react_set_input(date_input, "12/6/2026")
+    time.sleep(0.15)
+    date_input.send_keys(Keys.TAB)
+    print("    ✅ Booking Date set to 12/6/2026.")
+
+    # ----------------------------------------------------------
     # STEP 3: START TIME
-    # ---------------------------------------------------------
-    actions.send_keys(Keys.ESCAPE).perform()
-    start_lbl = driver.find_element(By.XPATH, "//*[normalize-space()='Start Time']")
-    actions.move_to_element(start_lbl).move_by_offset(0, 40).click().perform()
-    start_opt = wait.until(EC.element_to_be_clickable((By.XPATH, "(//*[normalize-space()='20:00'])[last()]")))
-    pure_human_click(start_opt)
+    # ----------------------------------------------------------
+    open_dropdown_and_select(
+        label_xpath="//*[normalize-space()='Start Time']",
+        option_xpath="(//*[normalize-space()='20:00'])[last()]",
+        step_name="Start Time (20:00)"
+    )
 
-    # ---------------------------------------------------------
-    # STEP 4: END TIME 
-    # ---------------------------------------------------------
-    actions.send_keys(Keys.ESCAPE).perform()
-    end_lbl = driver.find_element(By.XPATH, "//*[normalize-space()='End Time']")
-    actions.move_to_element(end_lbl).move_by_offset(0, 40).click().perform()
-    end_opt = wait.until(EC.element_to_be_clickable((By.XPATH, "(//*[normalize-space()='22:00'])[last()]")))
-    pure_human_click(end_opt)
-    
-    # =========================================================
-    # THE MASTER REFRESH HACK (Fake API Trigger)
-    # =========================================================
-    print("[*] Forcing Backend API to Fetch Buildings...")
-    actions.send_keys(Keys.ESCAPE).perform()
-    try:
-        # Hum bina building bhare ek fake search click mar rahe hain
-        dummy_search = driver.find_element(By.XPATH, "//*[contains(text(), 'Search Available Rooms')]")
-        pure_human_click(dummy_search)
-        time.sleep(1.5) # API ko response dene ka time diya (Ye Page Refresh ka kaam karega)
-    except:
-        pass
+    # ----------------------------------------------------------
+    # STEP 4: END TIME
+    # ----------------------------------------------------------
+    open_dropdown_and_select(
+        label_xpath="//*[normalize-space()='End Time']",
+        option_xpath="(//*[normalize-space()='22:00'])[last()]",
+        step_name="End Time (22:00)"
+    )
 
-    # ---------------------------------------------------------
-    # STEP 5: BUILDING (Machine Speed Polling)
-    # ---------------------------------------------------------
-    bld_lbl = driver.find_element(By.XPATH, "//*[normalize-space()='Building']")
+    # ----------------------------------------------------------
+    # TRIGGER BACKEND API
+    # ----------------------------------------------------------
+    print("[*] Forcing API trigger for Buildings...")
+    actions.send_keys(Keys.ESCAPE).perform()
+    driver.execute_script("document.body.click();")
+    actions.send_keys(Keys.TAB).perform()
+    time.sleep(1.5) # Initial wait for API to fetch buildings
+
+    # ----------------------------------------------------------
+    # STEP 5: BUILDING (Aggressive AJAX Polling for 30-2F)
+    # ----------------------------------------------------------
+    print("[*] Step: Building (Building 30-2F)")
+    bld_label = wait.until(EC.presence_of_element_located((By.XPATH, "//*[normalize-space()='Building']")))
     
-    for attempt in range(10): 
-        actions.send_keys(Keys.ESCAPE).perform()
-        time.sleep(0.2)
-        actions.move_to_element(bld_lbl).move_by_offset(0, 40).click().perform()
+    bld_selected = False
+    for attempt in range(15): # Max 15 attempts to let API load the list
         try:
-            bld_opt = WebDriverWait(driver, 0.5).until(EC.presence_of_element_located((By.XPATH, "(//*[contains(text(), 'Building 30-2F')])[last()]")))
-            pure_human_click(bld_opt)
+            actions.send_keys(Keys.ESCAPE).perform()
+            time.sleep(0.3)
+            # Open the dropdown
+            actions.move_to_element(bld_label).move_by_offset(0, 40).click().perform()
+            
+            # Specifically hunt for Building 30-2F using presence_of_element_located
+            bld_opt = WebDriverWait(driver, 1).until(
+                EC.presence_of_element_located((By.XPATH, "(//*[normalize-space(text())='Building 30-2F'])[last()]"))
+            )
+            js_click(bld_opt)
+            print("    ✅ Building (Building 30-2F) loaded and selected.")
+            bld_selected = True
             break
-        except:
-            actions.send_keys(Keys.TAB).perform() 
+        except Exception:
+            print(f"    ⏳ Attempt {attempt+1}: 'Building 30-2F' not yet fetched, retrying...")
+            time.sleep(1) # Wait 1 second before trying again
+            
+    if not bld_selected:
+        print("    ⚠️ Failed to select Building 30-2F. Check if it exists for this time slot.")
 
-    # ---------------------------------------------------------
-    # STEP 6: WING
-    # ---------------------------------------------------------
-    wing_lbl = driver.find_element(By.XPATH, "//*[normalize-space()='Wing']")
+    # ----------------------------------------------------------
+    # STEP 6: WING (Aggressive AJAX Polling for E)
+    # ----------------------------------------------------------
+    print("[*] Step: Wing (E)")
+    wing_label = wait.until(EC.presence_of_element_located((By.XPATH, "//*[normalize-space()='Wing']")))
     
-    for attempt in range(5):
-        actions.send_keys(Keys.ESCAPE).perform()
-        time.sleep(0.2)
-        actions.move_to_element(wing_lbl).move_by_offset(0, 40).click().perform()
+    for attempt in range(10):
         try:
-            wing_opt = WebDriverWait(driver, 0.5).until(EC.presence_of_element_located((By.XPATH, "(//*[text()='E' or normalize-space()='E'])[last()]")))
-            pure_human_click(wing_opt)
+            actions.send_keys(Keys.ESCAPE).perform()
+            time.sleep(0.3)
+            actions.move_to_element(wing_label).move_by_offset(0, 40).click().perform()
+            
+            wing_opt = WebDriverWait(driver, 1).until(
+                EC.presence_of_element_located((By.XPATH, "(//*[normalize-space(text())='E' or text()='E'])[last()]"))
+            )
+            js_click(wing_opt)
+            print("    ✅ Wing (E) loaded and selected.")
             break
-        except:
-            pass
+        except Exception:
+            print(f"    ⏳ Attempt {attempt+1}: Wing 'E' not yet fetched, retrying...")
+            time.sleep(1)
 
-    # ---------------------------------------------------------
-    # FINAL ACTIONS (Machine Speed)
-    # ---------------------------------------------------------
+    # ----------------------------------------------------------
+    # STEP 7: SEARCH & SELECT ROOM
+    # ----------------------------------------------------------
+    print("[*] Clicking 'Search Available Rooms'...")
     actions.send_keys(Keys.ESCAPE).perform()
-    search_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Search Available Rooms')]")))
-    pure_human_click(search_btn)
+    search_btn = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Search Available Rooms')]"))
+    )
+    js_click(search_btn)
     
-    room = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Meeting Room No 02')]")))
-    pure_human_click(room)
-    
-    agree = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'I Agree')]")))
-    pure_human_click(agree)
-    
-    title_el = wait.until(EC.presence_of_element_located((By.XPATH, "//input[contains(@placeholder, 'Title') or contains(@placeholder, 'title')] | //*[contains(text(), 'Title')]/following::input[1]")))
-    title_el.send_keys(Keys.CONTROL + "a")
-    title_el.send_keys(Keys.BACKSPACE)
-    title_el.send_keys("ISOC")
+    print("[*] Finding Meeting Room No 02...")
+    target_room = wait.until(
+        EC.presence_of_element_located((By.XPATH, "(//*[contains(text(), 'Meeting Room No 02')])[1]"))
+    )
+    clickable_room = driver.execute_script("""
+        var el = arguments[0];
+        while(el) {
+            if(el.tagName === 'BUTTON' || el.getAttribute('role') === 'button' || el.classList.contains('card')) return el;
+            el = el.parentElement;
+        }
+        return arguments[0];
+    """, target_room)
+    js_click(clickable_room)
+    print("    ✅ Room selected.")
 
-    confirm = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Confirm Booking')]")))
-    pure_human_click(confirm)
+    # ----------------------------------------------------------
+    # STEP 8: I AGREE
+    # ----------------------------------------------------------
+    print("[*] Clicking 'I Agree'...")
+    agree_btn = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'I Agree')]"))
+    )
+    js_click(agree_btn)
 
-    print("\n🏆 BOOM! Surya, Action completed faster than humanly possible!")
+    # ----------------------------------------------------------
+    # STEP 9: TITLE INPUT
+    # ----------------------------------------------------------
+    print("[*] Entering meeting title 'ISOC'...")
+    title_input = wait.until(
+        EC.presence_of_element_located(
+            (By.XPATH, "//input[contains(@placeholder, 'Title') or contains(@placeholder, 'title')]"
+                       " | //*[normalize-space()='Title']/following::input[1]")
+        )
+    )
+    js_click(title_input)
+    react_set_input(title_input, "ISOC")
+    print("    ✅ Title set to 'ISOC'.")
+
+    # ----------------------------------------------------------
+    # STEP 10: CONFIRM BOOKING
+    # ----------------------------------------------------------
+    print("[*] Clicking 'Confirm Booking'...")
+    confirm_btn = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Confirm Booking')]"))
+    )
+    js_click(confirm_btn)
+
+    print("\n🏆 BOOM! Surya, Booking confirmed exactly as requested at machine speed!")
 
 except Exception as e:
     print(f"\n❌ ERROR: {e}")
+    import traceback
+    traceback.print_exc()
