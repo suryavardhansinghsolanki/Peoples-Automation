@@ -52,7 +52,6 @@ This script **fully automates** the Peoplefirst CRBS room booking portal in **6â
 | Chrome Browser | Any recent version |
 | ChromeDriver | Must match your Chrome version |
 | OS | Windows 10 / 11 |
-| Network | Must be on Reliance internal network or VPN |
 
 ### Install Dependencies
 
